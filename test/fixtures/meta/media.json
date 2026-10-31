@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "id": "18000000000000001",
+      "caption": "Nowy odcinek o animacjach w CSS",
+      "permalink": "https://www.instagram.com/p/SCRUBBED1/",
+      "timestamp": "2026-10-30T10:00:00+0000",
+      "comments_count": 3
+    },
+    {
+      "id": "18000000000000002",
+      "caption": "Bez komentarzy",
+      "permalink": "https://www.instagram.com/p/SCRUBBED2/",
+      "timestamp": "2026-10-20T10:00:00+0000",
+      "comments_count": 0
+    }
+  ],
+  "paging": { "cursors": { "before": "QVFI", "after": "QVFJ" } }
+}

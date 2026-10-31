@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE3ODQxNDAwMDAwMDAwMDAxOjAAAA1",
+      "created_time": "2026-10-31T11:40:00+0000",
+      "from": { "username": "ania_k", "id": "6000000000000001" },
+      "to": { "data": [{ "username": "wozu_co", "id": "17841400000000001" }] },
+      "message": "Hej! Ile kosztuje minikurs i czy jest dla początkujących?"
+    },
+    {
+      "id": "aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE3ODQxNDAwMDAwMDAwMDAxOjAAAA0",
+      "created_time": "2026-10-31T11:00:00+0000",
+      "from": { "username": "wozu_co", "id": "17841400000000001" },
+      "to": { "data": [{ "username": "ania_k", "id": "6000000000000001" }] },
+      "message": "Cześć! Dzięki za wiadomość."
+    },
+    {
+      "id": "aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE3ODQxNDAwMDAwMDAwMDAxOjAAAAZ",
+      "created_time": "2026-10-31T10:55:00+0000",
+      "from": { "username": "ania_k", "id": "6000000000000001" },
+      "to": { "data": [{ "username": "wozu_co", "id": "17841400000000001" }] },
+      "attachments": { "data": [{ "mime_type": "image/jpeg", "image_data": { "url": "https://lookaside.fbsbx.com/scrubbed" } }] }
+    }
+  ]
+}

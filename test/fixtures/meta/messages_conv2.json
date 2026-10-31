@@ -1,0 +1,11 @@
+{
+  "data": [
+    {
+      "id": "aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE3ODQxNDAwMDAwMDAwMDAxOjBBBB1",
+      "created_time": "2026-10-29T09:00:00+0000",
+      "from": { "username": "marek.p", "id": "6000000000000002" },
+      "to": { "data": [{ "username": "wozu_co", "id": "17841400000000001" }] },
+      "message": "Hi, are you open to a paid collab next month?"
+    }
+  ]
+}
