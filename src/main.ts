@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { emailProviders } from "./automations/email.js";
 import { loadConfig } from "./config.js";
 import { FakeConnector } from "./connectors/fake/index.js";
 import { MetaConnector } from "./connectors/meta/index.js";
@@ -28,12 +29,23 @@ if (config.fakeConnector) {
   connectors.push(fake);
 }
 
-const svc = new Service({ db, config, log, connectors });
+const svc = new Service({ db, config, log, connectors, email: emailProviders(config) });
 const { app, idle } = createApp(svc);
 const stopJobs = startScheduler(svc);
 
 const server = serve({ fetch: app.fetch, port: config.port }, (i) =>
-  log.info({ port: i.port, v: VERSION, sending: config.sendingEnabled, approval: config.approval, webhooks: config.meta.webhooksEnabled }, "social-inbox up"),
+  log.info(
+    {
+      port: i.port,
+      v: VERSION,
+      sending: config.sendingEnabled,
+      approval: config.approval,
+      webhooks: config.meta.webhooksEnabled,
+      automations: config.automations.enabled,
+      autosend: config.automations.autosend,
+    },
+    "social-inbox up",
+  ),
 );
 
 const shutdown = async () => {

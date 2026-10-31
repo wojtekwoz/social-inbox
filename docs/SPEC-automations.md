@@ -63,6 +63,7 @@ Per flow and per trigger media: triggered, drafts created, sent, button taps, qu
 - Follow check via `is_user_follow_business`; click-tracking redirect; reminder within 23 h.
 - 700/h private-reply limiter beyond `MAX_SENDS_PER_HOUR`; A/B variants beyond round-robin.
 - Business Verification + App Review, app Live, webhooks on (wozu-driven).
+- Added during M5 (see docs/REPORT-automations.md): live verification of the IG button template on private replies and of quick-reply payloads (the poller does not request a quick-reply payload field, so quick-reply taps are only recognised via webhooks until that is checked against the live API); flow deletion (flows can only be switched off); a job that closes waiting runs past their wait window (they are simply ignored after 7 days for taps and 24 h for email); mentions (`ig.mn`) as triggers.
 
 ## 10. Acceptance (fixtures/fake connector only)
 1. A comment "Claude!" (diacritics/case-insensitive) on a configured reel creates exactly one private-reply draft with one button; a second matching comment from the same comment id/poll+webhook duplicate creates nothing; a comment > 7 days old is skipped with reason.

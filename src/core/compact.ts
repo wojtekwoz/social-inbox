@@ -38,7 +38,7 @@ export interface Table {
 }
 
 /** Columns that are dropped when every row has no value for them. */
-const OPTIONAL = new Set(["lbl", "win", "on", "me", "t", "url", "nid", "raw", "read", "ts"]);
+const OPTIONAL = new Set(["lbl", "win", "on", "me", "t", "url", "nid", "raw", "read", "ts", "auto"]);
 
 const empty = (v: unknown) => v === undefined || v === null || (Array.isArray(v) && v.length === 0);
 

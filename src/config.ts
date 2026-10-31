@@ -31,6 +31,21 @@ export interface Config {
     pageId?: string;
     backfillDays: number;
   };
+  automations: {
+    /** Global kill switch: when false the engine evaluates nothing. */
+    enabled: boolean;
+    /** Lets `mode: "auto"` flows approve their own drafts (still gated by SENDING_ENABLED). */
+    autosend: boolean;
+    /** One automated message per contact per flow step within this many hours. */
+    cooldownHours: number;
+  };
+  email: {
+    plunkApiKey?: string;
+    plunkApiUrl: string;
+    mailerliteApiKey?: string;
+    mailerliteGroupId?: string;
+    mailerliteApiUrl: string;
+  };
 }
 
 const bool = (v: string | undefined, d: boolean) =>
@@ -69,6 +84,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       humanAgent: bool(env.META_HUMAN_AGENT, false),
       pageId: env.META_PAGE_ID || undefined,
       backfillDays: num(env.META_BACKFILL_DAYS, 30),
+    },
+    automations: {
+      enabled: bool(env.AUTOMATIONS_ENABLED, false),
+      autosend: bool(env.AUTOMATIONS_AUTOSEND, false),
+      cooldownHours: num(env.AUTOMATIONS_COOLDOWN_HOURS, 24),
+    },
+    email: {
+      plunkApiKey: env.PLUNK_API_KEY || undefined,
+      plunkApiUrl: (env.PLUNK_API_URL || "https://api.useplunk.com").replace(/\/$/, ""),
+      mailerliteApiKey: env.MAILERLITE_API_KEY || undefined,
+      mailerliteGroupId: env.MAILERLITE_GROUP_ID || undefined,
+      mailerliteApiUrl: (env.MAILERLITE_API_URL || "https://connect.mailerlite.com").replace(/\/$/, ""),
     },
   };
 }

@@ -44,7 +44,7 @@ export class Store {
     this.db.transaction(() => {
       for (const it of sorted) {
         const r = this.ingestOne(it, now);
-        if (r === "new") res.new++;
+        if (typeof r === "object") (res.new++, res.ids.push(r.id));
         else if (r === "updated") res.updated++;
       }
     })();
@@ -70,7 +70,7 @@ export class Store {
     return id;
   }
 
-  private ingestOne(it: IncomingItem, now: number): "new" | "updated" | "same" {
+  private ingestOne(it: IncomingItem, now: number): { id: string } | "updated" | "same" {
     const postId = it.post ? this.upsertPost(it.net, it.post) : null;
     const existing = this.db.prepare("SELECT * FROM items WHERE net = ? AND native_id = ?").get(it.net, it.nativeId) as
       | ItemRow
@@ -142,7 +142,7 @@ export class Store {
         )
         .run(it.ts, it.ts, it.who ?? null, it.authorId ?? null, thread.id);
     }
-    return "new";
+    return { id };
   }
 
   // ---- reads --------------------------------------------------------------
@@ -306,6 +306,8 @@ export class Store {
       this.db
         .prepare("UPDATE threads SET who = NULL, author_id = NULL WHERE net = ? AND author_id = ?")
         .run(net, authorId);
+      // Automation runs hold captured emails. Opt-outs are kept so the person is never messaged again.
+      this.db.prepare("DELETE FROM flow_runs WHERE net = ? AND contact_id = ?").run(net, authorId);
     })();
     return n;
   }

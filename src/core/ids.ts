@@ -1,8 +1,8 @@
 import type { DB } from "./db.js";
 import { UserError } from "./errors.js";
 
-// Short IDs: a one-letter type prefix + a base36 counter ("i7k", "t3f", "d12", "p9").
-export type IdPrefix = "i" | "t" | "d" | "p";
+// Short IDs: a one-letter type prefix + a base36 counter ("i7k", "t3f", "d12", "p9", "f2", "r5").
+export type IdPrefix = "i" | "t" | "d" | "p" | "f" | "r";
 
 export function nextCounter(db: DB, name: string): number {
   const row = db

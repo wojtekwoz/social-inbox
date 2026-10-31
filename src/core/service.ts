@@ -1,3 +1,6 @@
+import { FlowApi } from "../automations/api.js";
+import type { EmailProviders } from "../automations/email.js";
+import { Automations } from "../automations/engine.js";
 import type { Config } from "../config.js";
 import type { Logger } from "../log.js";
 import { clamp, columnar, estimateTokens, fitRows, LIMITS, lines, trunc, type Row } from "./compact.js";
@@ -6,9 +9,9 @@ import { TransientError, UserError } from "./errors.js";
 import { decodeCursor, encodeCursor, newId } from "./ids.js";
 import type { In } from "./schemas.js";
 import type * as S from "./schemas.js";
-import { Store, type ItemWithThread } from "./store.js";
+import { Store, type IngestResult, type ItemWithThread } from "./store.js";
 import { age, H } from "./time.js";
-import type { Connector, DraftKind, DraftRow, ItemRow, Label, Src, ThreadRow } from "./types.js";
+import type { Connector, DraftKind, DraftPayload, DraftRow, IncomingItem, ItemRow, Label, Src, ThreadRow } from "./types.js";
 import { replyWindow } from "./window.js";
 
 const DEFAULT_COLS = ["id", "src", "t", "who", "age", "x", "lbl", "win"];
@@ -25,6 +28,8 @@ export interface ServiceDeps {
   config: Config;
   log: Logger;
   connectors?: Connector[];
+  /** Configured email list providers for automations (see automations/email.ts). */
+  email?: EmailProviders;
   now?: () => number;
 }
 
@@ -33,6 +38,8 @@ export class Service {
   readonly db: DB;
   readonly config: Config;
   readonly log: Logger;
+  readonly automations: Automations;
+  readonly flows: FlowApi;
   private connectors = new Map<string, Connector>();
   private lastSync = new Map<string, number>();
   now: () => number;
@@ -44,7 +51,16 @@ export class Service {
     this.log = deps.log;
     this.now = deps.now ?? Date.now;
     for (const c of deps.connectors ?? []) this.connectors.set(c.net, c);
+    this.automations = new Automations(this, deps.email);
+    this.flows = new FlowApi(this, this.automations);
     this.recoverInterruptedSends();
+  }
+
+  /** Single ingest path for polls and webhooks: store (deduped), then evaluate new items once. */
+  async ingest(items: IncomingItem[]): Promise<IngestResult> {
+    const r = this.store.ingest(items, this.now());
+    await this.automations.evaluate(r.ids);
+    return r;
   }
 
   addConnector(c: Connector): void {
@@ -123,6 +139,8 @@ export class Service {
       else if (ts) synced[net] = age(ts, this.now());
     }
     if (Object.keys(synced).length) out.synced = synced;
+    const auto = this.automations.overview();
+    if (auto) out.auto = auto;
     if (!this.config.sendingEnabled) out.send = "off";
     return out;
   }
@@ -262,6 +280,7 @@ export class Service {
     if (r.text) o.x = trunc(r.text, preview);
     if (r.error) o.err = r.error;
     if (r.native_id) o.nid = r.native_id;
+    if (r.flow_run_id) o.auto = r.flow_run_id;
     return o;
   }
 
@@ -281,24 +300,35 @@ export class Service {
     return { item, thread: this.store.thread(item.thread_id)! };
   }
 
-  /** Validates a reply draft; returns human-readable checks or throws with a clear reason. */
-  private checkReply(kind: DraftKind, text: string, item: ItemWithThread | undefined, thread: ThreadRow, excludeDraft?: string): string[] {
+  /**
+   * Validates a reply draft; returns human-readable checks or throws with a clear reason.
+   * `automation`: drafts created by a flow never get the HUMAN_AGENT window.
+   */
+  private checkReply(
+    kind: DraftKind,
+    text: string,
+    item: ItemWithThread | undefined,
+    thread: ThreadRow,
+    excludeDraft?: string,
+    automation = false,
+  ): string[] {
     const c = this.connectors.get(thread.net);
     if (!c) throw new UserError(`no connector for ${thread.net}; cannot draft`, 409);
     const checks: string[] = [];
     const len = [...text].length;
     if (kind === "dm") {
       if (thread.src !== "ig.dm") throw new UserError(`kind dm needs a DM thread; ${thread.id} is ${thread.src}`);
+      const humanAgent = this.config.meta.humanAgent && !automation;
       const w = replyWindow(
         thread.last_in_ts,
-        { windowMs: c.limits.dmWindowMs, humanAgentWindowMs: c.limits.humanAgentWindowMs, humanAgent: this.config.meta.humanAgent },
+        { windowMs: c.limits.dmWindowMs, humanAgentWindowMs: c.limits.humanAgentWindowMs, humanAgent },
         this.now(),
       );
       if (!w.open) {
         const since = thread.last_in_ts ? age(thread.last_in_ts, this.now()) : "never";
         throw new UserError(
           `reply window closed: last message from ${thread.who ?? "user"} was ${since} ago (limit ${c.limits.dmWindowMs / H}h` +
-            (this.config.meta.humanAgent ? `, ${(c.limits.humanAgentWindowMs ?? 0) / H}h with HUMAN_AGENT` : "") +
+            (humanAgent ? `, ${(c.limits.humanAgentWindowMs ?? 0) / H}h with HUMAN_AGENT` : "") +
             ")",
           422,
         );
@@ -331,20 +361,43 @@ export class Service {
   }
 
   draftReply(p: In<typeof S.draftReplyShape>, actor: string) {
+    return this.createDraft(p, actor);
+  }
+
+  /** Reply/DM draft creation shared by agents and automation flows (which add a payload and run id). */
+  createDraft(
+    p: { to: string; text: string; kind?: "reply" | "dm" | "private_reply"; key?: string; payload?: DraftPayload; flowRunId?: string },
+    actor: string,
+  ): Row & { d: string; dup?: boolean } {
     const existing = this.byKey(p.key);
-    if (existing) return { ...this.compactDraft(existing), ok: true, dup: true };
+    if (existing) return { ...this.compactDraft(existing), d: existing.id, ok: true, dup: true };
     const text = p.text.trim();
     if (!text) throw new UserError("empty text");
     const { item, thread } = this.resolveTarget(p.to);
     const kind: DraftKind = p.kind ?? (thread.src === "ig.dm" ? "dm" : "reply");
-    const checks = this.checkReply(kind, text, item, thread);
+    const checks = this.checkReply(kind, text, item, thread, undefined, !!p.flowRunId);
+    if (p.payload?.buttons?.length) checks.push(`buttons ${p.payload.buttons.length}`);
+    if (p.payload?.quick_replies?.length) checks.push(`quick_replies ${p.payload.quick_replies.length}`);
     const id = newId(this.db, "d");
     this.db
       .prepare(
-        "INSERT INTO drafts (id, kind, item_id, thread_id, text, status, idem_key, checks, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+        `INSERT INTO drafts (id, kind, item_id, thread_id, text, status, idem_key, checks, created_by, created_at, flow_run_id, payload)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, kind, item?.id ?? null, thread.id, text, p.key ?? null, JSON.stringify(checks), actor, this.now());
-    this.store.audit(actor, "draft", id, { kind, to: p.to });
+      .run(
+        id,
+        kind,
+        item?.id ?? null,
+        thread.id,
+        text,
+        p.key ?? null,
+        JSON.stringify(checks),
+        actor,
+        this.now(),
+        p.flowRunId ?? null,
+        p.payload ? JSON.stringify(p.payload) : null,
+      );
+    this.store.audit(actor, "draft", id, { kind, to: p.to, ...(p.flowRunId ? { run: p.flowRunId } : {}) }, this.now());
     return { d: id, ok: true, checks, preview: trunc(text, 160) };
   }
 
@@ -380,7 +433,7 @@ export class Service {
             .prepare("SELECT * FROM drafts WHERE status IN ('pending','approved','sending','failed') ORDER BY created_at DESC LIMIT ?")
             .all(limit)
     ) as DraftRow[];
-    const cols = ["d", "st", "k", "to", "age", "x", "err", "nid"];
+    const cols = ["d", "st", "k", "to", "age", "x", "err", "nid", "auto"];
     return columnar(rows.map((r) => this.compactDraft(r)), cols);
   }
 
@@ -394,7 +447,7 @@ export class Service {
     if (r.status !== "pending") throw new UserError(`draft ${d} is ${r.status}; only pending drafts can be edited`, 409);
     if (!r.text) throw new UserError("moderation drafts have no text");
     const { item, thread } = this.resolveTarget(r.item_id ?? r.thread_id!);
-    const checks = this.checkReply(r.kind, text.trim(), item, thread, d);
+    const checks = this.checkReply(r.kind, text.trim(), item, thread, d, !!r.flow_run_id);
     this.db.prepare("UPDATE drafts SET text = ?, checks = ? WHERE id = ?").run(text.trim(), JSON.stringify(checks), d);
     this.store.audit(actor, "edit", d);
     return { d, ok: true, checks };
@@ -408,7 +461,7 @@ export class Service {
     if (r.status !== "pending") throw new UserError(`draft ${d} is ${r.status}`, 409);
     if (r.kind === "dm" && r.thread_id) {
       // The window may have closed while the draft waited.
-      this.checkReply("dm", r.text ?? "", undefined, this.store.thread(r.thread_id)!);
+      this.checkReply("dm", r.text ?? "", undefined, this.store.thread(r.thread_id)!, undefined, !!r.flow_run_id);
     }
     this.db
       .prepare("UPDATE drafts SET status = 'approved', approved_by = ?, approved_at = ?, confirmed = ? WHERE id = ? AND status = 'pending'")
@@ -446,9 +499,10 @@ export class Service {
 
     let humanAgent = false;
     if (r.kind === "dm") {
+      // Automation drafts never use the HUMAN_AGENT tag, even when the feature is on.
       const w = replyWindow(
         thread.last_in_ts,
-        { windowMs: c.limits.dmWindowMs, humanAgentWindowMs: c.limits.humanAgentWindowMs, humanAgent: this.config.meta.humanAgent },
+        { windowMs: c.limits.dmWindowMs, humanAgentWindowMs: c.limits.humanAgentWindowMs, humanAgent: this.config.meta.humanAgent && !r.flow_run_id },
         this.now(),
       );
       if (!w.open) throw new UserError("reply window closed since approval; draft not sent", 422);
@@ -476,6 +530,7 @@ export class Service {
           .run(now, res.nativeId ?? null, res.raw === undefined ? null : JSON.stringify(res.raw), d);
         this.store.audit(actor, "sent", d, { kind: r.kind, nid: res.nativeId, approved_by: r.approved_by });
         this.applyLocalEffects(r, item, thread, res.nativeId, now);
+        this.automations.onSent(r, now);
       })();
       return { d, st: "sent", nid: res.nativeId ?? null };
     } catch (e) {
@@ -561,7 +616,7 @@ export class Service {
       this.lastSync.set(key, this.now());
       try {
         const items = await c.poll(scope);
-        const r = this.store.ingest(items, this.now());
+        const r = await this.ingest(items);
         this.store.setCursor(`sync:${c.net}`, String(this.now()));
         out[c.net] = { new: r.new, upd: r.updated };
       } catch (e) {

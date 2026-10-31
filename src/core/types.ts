@@ -1,8 +1,9 @@
 export type Src = "ig.dm" | "ig.cm" | "ig.mn" | "yt.cm" | "li.cm";
 export const SRCS: Src[] = ["ig.dm", "ig.cm", "ig.mn", "yt.cm", "li.cm"];
 
-export type Label = "q" | "lead" | "praise" | "spam" | "complaint" | "needs-wozu";
-export const LABELS: Label[] = ["q", "lead", "praise", "spam", "complaint", "needs-wozu"];
+/** `auto` marks items handled by an automation flow. */
+export type Label = "q" | "lead" | "praise" | "spam" | "complaint" | "needs-wozu" | "auto";
+export const LABELS: Label[] = ["q", "lead", "praise", "spam", "complaint", "needs-wozu", "auto"];
 
 export type DraftKind = "reply" | "dm" | "private_reply" | "hide" | "unhide" | "delete" | "reject" | "publish";
 export const MODERATION_KINDS = ["hide", "unhide", "delete", "reject", "publish"] as const;
@@ -89,6 +90,24 @@ export interface DraftRow {
   error: string | null;
   attempts: number;
   next_at: number | null;
+  /** Set when an automation flow created the draft. */
+  flow_run_id: string | null;
+  /** JSON DraftPayload (buttons / quick replies). */
+  payload: string | null;
+}
+
+/** A button is either a postback (`payload`) or a link (`url`). */
+export interface DraftButton {
+  title: string;
+  payload?: string;
+  url?: string;
+}
+
+export interface DraftPayload {
+  flow?: string;
+  step?: number;
+  buttons?: DraftButton[];
+  quick_replies?: { title: string; payload: string }[];
 }
 
 /** Everything a connector needs to execute an approved draft. */

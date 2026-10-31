@@ -72,7 +72,10 @@ describe("MCP over Streamable HTTP", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["draft_moderation", "draft_reply", "drafts", "inbox_list", "inbox_overview", "item_get", "mark", "search", "send_approved", "sync_now", "thread_get", "thread_note"].sort(),
+      [
+        "draft_moderation", "draft_reply", "drafts", "inbox_list", "inbox_overview", "item_get", "mark", "search", "send_approved", "sync_now", "thread_get", "thread_note",
+        "flow_list", "flow_get", "flow_upsert", "flow_toggle", "flow_metrics", "flow_test",
+      ].sort(),
     );
 
     const ov = json(await client.callTool({ name: "inbox_overview", arguments: {} }));

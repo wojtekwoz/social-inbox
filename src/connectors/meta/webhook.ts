@@ -25,7 +25,25 @@ interface Messaging {
   sender: { id: string };
   recipient: { id: string };
   timestamp: number;
-  message?: { mid: string; text?: string; is_echo?: boolean; is_deleted?: boolean; attachments?: unknown };
+  message?: {
+    mid: string;
+    text?: string;
+    is_echo?: boolean;
+    is_deleted?: boolean;
+    attachments?: { type?: string; payload?: { url?: string; id?: string } }[];
+    quick_reply?: { payload: string };
+    reply_to?: { mid?: string; story?: { id?: string; url?: string } };
+  };
+  /** messaging_postbacks: buttons and ice breakers. */
+  postback?: { mid?: string; title?: string; payload?: string };
+}
+
+/** Story replies/mentions in the same `story` shape the Graph poller returns, so triggers read one format. */
+function storyOf(m: NonNullable<Messaging["message"]>): { reply_to?: { id?: string; link?: string }; mention?: { id?: string; link?: string } } | undefined {
+  if (m.reply_to?.story) return { reply_to: { id: m.reply_to.story.id, link: m.reply_to.story.url } };
+  const a = m.attachments?.find((x) => x.type === "story_mention");
+  if (a) return { mention: { id: a.payload?.id, link: a.payload?.url } };
+  return undefined;
 }
 interface Change {
   field: string;
@@ -57,11 +75,11 @@ export async function parseWebhook(
   for (const e of body.entry ?? []) {
     const entryTs = e.time > 1e12 ? e.time : e.time * 1000;
     for (const m of e.messaging ?? []) {
-      if (!m.message || m.message.is_deleted) {
+      if (!m.postback && (!m.message || m.message.is_deleted)) {
         ignored++; // messaging_seen, reactions, deletes
         continue;
       }
-      const me = !!m.message.is_echo || m.sender.id === self || m.sender.id === e.id;
+      const me = !!m.message?.is_echo || m.sender.id === self || m.sender.id === e.id;
       const other = me ? m.recipient.id : m.sender.id;
       let who = usernames.get(other);
       if (!who && !me && acct && graph) {
@@ -72,17 +90,24 @@ export async function parseWebhook(
           /* profile lookup needs consent in some cases; the poller fills names later */
         }
       }
+      const base = { net: "ig", src: "ig.dm" as const, threadNativeId: `dm:${other}`, authorId: me ? self : other, who: me ? undefined : who, ts: m.timestamp, me };
+      if (m.postback) {
+        // Button / ice-breaker tap: an inbound action that opens the 24 h window.
+        items.push({
+          ...base,
+          nativeId: m.postback.mid ?? `pb:${other}:${m.timestamp}`,
+          text: `[tap] ${m.postback.title ?? m.postback.payload ?? ""}`.trim(),
+          raw: m,
+        });
+        continue;
+      }
+      const msg = m.message!;
+      const story = storyOf(msg);
       items.push({
-        net: "ig",
-        nativeId: m.message.mid,
-        src: "ig.dm",
-        threadNativeId: `dm:${other}`,
-        authorId: me ? self : other,
-        who: me ? undefined : who,
-        text: messageText(m.message),
-        ts: m.timestamp,
-        me,
-        raw: m,
+        ...base,
+        nativeId: msg.mid,
+        text: messageText({ ...msg, story }),
+        raw: story ? { ...m, story } : m,
       });
     }
 

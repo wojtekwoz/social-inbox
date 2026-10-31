@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import * as F from "../automations/api.js";
 import type { Principal, Scope } from "../core/auth.js";
 import { UserError } from "../core/errors.js";
 import * as S from "../core/schemas.js";
@@ -87,6 +88,23 @@ export function createMcpServer(svc: Service, who: Principal, version = "0.1.0")
     { destructiveHint: true, idempotentHint: true },
   );
   tool("sync_now", "read", "Force a poll now (rate-limited). Returns new/updated counts.", S.syncShape, (a) => svc.sync({ src: a.src as never }));
+
+  // ---- automations (deterministic flows; every message is still a draft) ----
+  const canApprove = who.scopes.has("approve");
+  tool("flow_list", "read", "Automation flows: id, name, on, mode, trigger summary, 7-day triggered (n7) / sent (s7).", {}, () => svc.flows.list(), ro);
+  tool("flow_get", "read", "One flow's full JSON (trigger + steps).", F.flowGetShape, (a) => svc.flows.flowGet(a), ro);
+  tool(
+    "flow_upsert",
+    "draft",
+    "Create/update a flow (omit id to create; new flows are off). Validated; rejects follow-gating and other Meta policy violations. " +
+      'Steps: private_reply{text,button?{title,payload|url}} public_reply{variants[1-5]} send_dm{text,buttons?|quick_replies?} ask_email{text,retry_text?} ' +
+      "push_email{provider:plunk|mailerlite,tags?} tag{label} soft_follow_ask{text} handoff{note?}. mode auto needs an approve key.",
+    F.flowUpsertShape,
+    (a) => svc.flows.upsert(a, actor, canApprove),
+  );
+  tool("flow_toggle", "draft", "Switch a flow on/off.", F.flowToggleShape, (a) => svc.flows.toggle(a, actor, canApprove), { idempotentHint: true });
+  tool("flow_metrics", "read", "Event counts per flow (or one flow + conversion ratios and per-media rows), skip reasons (why).", F.flowMetricsShape, (a) => svc.flows.metrics(a), ro);
+  tool("flow_test", "read", "Dry-run the matcher on a text (no side effects): m=1 if it would trigger, plus the steps and draft/approve/send outcome.", F.flowTestShape, (a) => svc.flows.test(a), ro);
 
   if (svc.config.approval === "agent-confirmed") {
     tool(

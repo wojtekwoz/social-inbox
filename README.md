@@ -146,6 +146,30 @@ The app is the existing Meta app with **Instagram API via Facebook Login for Bus
 
 **Reply rules enforced at draft time, again at approval, and again at send:** DMs can only be sent within 24 h of the user's last message. With `META_HUMAN_AGENT=true` (a separate Meta feature) that becomes 7 days. Messages are limited to 1000 chars. Private replies are limited to one per comment, within 7 days. Comment replies are limited to 2200 chars and always go to the top-level comment.
 
+## Automations
+
+A small, **deterministic** rules engine for Instagram growth flows: keyword comment → private reply with a button → tap → DM / email capture → push to Plunk or MailerLite. There are no LLM calls. Anything a rule doesn't match stays in the inbox untouched for agents and humans. Design: [docs/SPEC-automations.md](docs/SPEC-automations.md).
+
+- **Off by default.** `AUTOMATIONS_ENABLED=false`. New flows are created switched off.
+- **Still drafts.** Every message a flow wants to send becomes a normal draft in the approval queue (`drafts` shows `auto: r…`). A `mode: "auto"` flow approves its own drafts as `system:automation` **only** with `AUTOMATIONS_AUTOSEND=true`, and they are executed **only** with `SENDING_ENABLED=true`. Only `approve`-scoped keys can create, edit or switch on `auto` flows.
+- **Meta rules in code:** follow-gating is rejected at validation, one private reply per comment within 7 days, DMs only inside the 24 h window (never `HUMAN_AGENT`), opt-out on `stop` / `stopp` / `nie pisz` / `unsubscribe` (whole message), a per-contact cooldown (`AUTOMATIONS_COOLDOWN_HOURS`, default 24) and `MAX_SENDS_PER_HOUR`.
+- **Triggers:** `comment_keyword` (optionally per post), `dm_keyword`, `story_reply`, `story_mention`, `postback` / `ice_breaker` (buttons, quick replies, ice breakers). Matching ignores case, diacritics and punctuation (`exact` | `word` (default) | `contains`). Each inbound item is evaluated once, even when it arrives via both webhook and poll.
+- **Steps:** `private_reply` (≤1 button), `public_reply` (1–5 variants, round-robin), `send_dm` (≤3 buttons or ≤13 quick replies), `ask_email`, `push_email`, `tag`, `soft_follow_ask` (never blocks), `handoff`.
+
+```json
+{"name":"Claude guide","enabled":true,
+ "trigger":{"type":"comment_keyword","keywords":["claude"],"media_ids":["p3"]},
+ "steps":[
+  {"type":"private_reply","text":"Hej! Kliknij, a wyślę Ci przewodnik.","button":{"title":"Wyślij","payload":"GUIDE"}},
+  {"type":"public_reply","variants":["Sprawdź DM 📩","Wysłane!"]},
+  {"type":"ask_email","text":"Na jaki email wysłać przewodnik?"},
+  {"type":"push_email","provider":"plunk","tags":["claude"]}]}
+```
+
+MCP tools: `flow_list`, `flow_get`, `flow_upsert`, `flow_toggle`, `flow_metrics`, `flow_test` (dry run, no side effects). `inbox_overview` gains `auto: {triggered, sent, pending}` (24 h).
+REST: `GET /api/flows` · `GET /api/flows/:f` · `POST /api/flows` · `PUT /api/flows/:f` · `POST /api/flows/:f/on|off` · `POST /api/flows/:f/test {text, media?}` · `GET /api/flows/metrics?id=&days=`.
+CLI: `sinbox flows list | get f1 | set flow.json | on f1 | off f1 | metrics [f1] [--days 30] | test f1 "Claude!"`.
+
 ## Configuration
 
 See [.env.example](.env.example). The main settings:
@@ -159,6 +183,8 @@ See [.env.example](.env.example). The main settings:
 | `TOKEN_ENC_KEY` | — | 32 bytes hex/base64; required to connect accounts |
 | `META_*` | — | See above |
 | `RETENTION_RAW_DAYS` / `RETENTION_TEXT_DAYS` | `30` / `365` | Daily purge job |
+| `AUTOMATIONS_ENABLED` / `AUTOMATIONS_AUTOSEND` | `false` / `false` | Rules engine kill switch / self-approval for `mode: "auto"` flows |
+| `PLUNK_API_KEY`, `PLUNK_API_URL`, `MAILERLITE_API_KEY`, `MAILERLITE_GROUP_ID` | — | `push_email` providers; off while the key is empty |
 
 ## Deploy (Coolify)
 
