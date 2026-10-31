@@ -20,6 +20,7 @@ const env = {
   SINBOX_AGENT_KEY: "sk_agent_smoke",
   SINBOX_ADMIN_KEY: "sk_admin_smoke",
   SENDING_ENABLED: "true",
+  SEND_MODE: "all",
   POLL_ENABLED: "false",
   LOG_LEVEL: "warn",
   SINBOX_HOME: join(dir, "cli"),

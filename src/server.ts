@@ -93,7 +93,8 @@ export function createApp(svc: Service, opts: { rateLimitPerMin?: number } = {})
     const job = (async () => {
       if (!meta) return;
       const { items, ignored } = await meta.webhookItems(payload);
-      const r = svc.store.ingest(items);
+      // Same idempotent ingest → automation path as polling.
+      const r = await svc.ingest(items);
       svc.log.info({ new: r.new, upd: r.updated, ignored }, "webhook ingested");
     })()
       .catch((e) => svc.log.error({ err: (e as Error).message }, "webhook processing failed"))

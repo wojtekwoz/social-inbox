@@ -14,6 +14,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       # Safety: nothing is sent until you flip this to true.
       - SENDING_ENABLED=${SENDING_ENABLED:-false}
+      # off | testers | all. Default off: nothing is sent even with SENDING_ENABLED=true.
+      - SEND_MODE=${SEND_MODE:-off}
+      - SEND_ALLOWLIST=${SEND_ALLOWLIST:-}
       - APPROVAL=${APPROVAL:-human}
       - MAX_SENDS_PER_HOUR=${MAX_SENDS_PER_HOUR:-30}
       - SINBOX_AGENT_KEY=${SINBOX_AGENT_KEY}

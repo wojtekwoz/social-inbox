@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import * as F from "../automations/api.js";
 import type { Principal, Scope } from "../core/auth.js";
 import { UserError } from "../core/errors.js";
 import * as S from "../core/schemas.js";
@@ -94,6 +95,34 @@ export function apiRoutes(svc: Service): Hono<Env> {
     need(c, "read");
     return c.json(await svc.sync(parse(S.syncShape, await body(c)) as never));
   });
+  // ---- automations
+  const canApprove = (c: Context<Env>) => c.get("who").scopes.has("approve");
+  api.get("/flows", (c) => (need(c, "read"), c.json(svc.flows.list())));
+  api.get("/flows/metrics", (c) => {
+    need(c, "read");
+    const q = query(c);
+    return c.json(svc.flows.metrics(parse(F.flowMetricsShape, { id: q.id, days: q.days === undefined ? undefined : Number(q.days) })));
+  });
+  api.get("/flows/:f", (c) => (need(c, "read"), c.json(svc.flows.flowGet(parse(F.flowGetShape, { id: c.req.param("f") })))));
+  api.post("/flows", async (c) => {
+    const actor = need(c, "draft");
+    const res = svc.flows.upsert(await body(c), actor, canApprove(c));
+    return c.json(res, res.created ? 201 : 200);
+  });
+  api.put("/flows/:f", async (c) => {
+    const actor = need(c, "draft");
+    return c.json(svc.flows.upsert({ ...(await body(c)), id: c.req.param("f") }, actor, canApprove(c)));
+  });
+  for (const [path, on] of [["on", true], ["off", false]] as const)
+    api.post(`/flows/:f/${path}`, (c) => {
+      const actor = need(c, "draft");
+      return c.json(svc.flows.toggle(parse(F.flowToggleShape, { id: c.req.param("f"), on }), actor, canApprove(c)));
+    });
+  api.post("/flows/:f/test", async (c) => {
+    need(c, "read");
+    return c.json(svc.flows.test(parse(F.flowTestShape, { ...(await body(c)), id: c.req.param("f") })));
+  });
+
   api.post("/oauth/meta/start", (c) => {
     need(c, "approve");
     return c.json({ url: loginUrl(svc.db, svc.config) });

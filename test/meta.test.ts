@@ -175,7 +175,7 @@ describe("Instagram drafts → approval → send (M1 acceptance, mocked Graph)",
     await svc.sync();
     const marek = rows(svc.list({ src: "ig.dm", fields: ["who"] })).find((r) => r.who === "@marek.p")!;
     const d = svc.draftReply({ to: marek.id as string, text: "Sorry for the delay!" }, "agent");
-    expect(d.checks![0]).toMatch(/^win \d+d HA$/);
+    expect((d.checks as string[])[0]).toMatch(/^win \d+d HA$/);
     svc.approve(d.d!, "human");
     await svc.sendApproved(d.d!, "agent");
     expect(graph.calls.find((c) => c.method === "POST")!.body).toMatchObject({ messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
