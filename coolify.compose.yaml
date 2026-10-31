@@ -1,0 +1,41 @@
+# Example for Coolify ("Docker Compose" build pack). Coolify's Traefik proxy terminates TLS
+# for the domain you assign (e.g. https://inbox.wozu.co) and forwards to port 8787.
+# Secrets are set in Coolify's environment UI, never committed.
+services:
+  social-inbox:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "8787"
+    environment:
+      - SERVICE_FQDN_SOCIAL_INBOX_8787
+      - PUBLIC_URL=${PUBLIC_URL:-https://inbox.wozu.co}
+      - DB_PATH=/data/inbox.db
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Safety: nothing is sent until you flip this to true.
+      - SENDING_ENABLED=${SENDING_ENABLED:-false}
+      - APPROVAL=${APPROVAL:-human}
+      - MAX_SENDS_PER_HOUR=${MAX_SENDS_PER_HOUR:-30}
+      - SINBOX_AGENT_KEY=${SINBOX_AGENT_KEY}
+      - SINBOX_ADMIN_KEY=${SINBOX_ADMIN_KEY}
+      - TOKEN_ENC_KEY=${TOKEN_ENC_KEY}
+      - META_APP_ID=${META_APP_ID}
+      - META_APP_SECRET=${META_APP_SECRET}
+      - META_LOGIN_CONFIG_ID=${META_LOGIN_CONFIG_ID:-}
+      - META_PAGE_ID=${META_PAGE_ID:-}
+      - META_WEBHOOKS_ENABLED=${META_WEBHOOKS_ENABLED:-false}
+      - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN:-}
+      - META_HUMAN_AGENT=${META_HUMAN_AGENT:-false}
+      - PRIVACY_CONTACT=${PRIVACY_CONTACT:-}
+    volumes:
+      - social-inbox-data:/data
+    # RAM budget from SPEC §4.5 (expected ~80-120 MB idle).
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  social-inbox-data:
