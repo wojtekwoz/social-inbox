@@ -1,3 +1,4 @@
+import { recipientAllowed, sendingOn } from "../config.js";
 import { UserError } from "../core/errors.js";
 import type { ItemWithThread } from "../core/store.js";
 import type { Service } from "../core/service.js";
@@ -292,11 +293,11 @@ export class Automations {
     return "ok";
   }
 
-  /** mode:auto + AUTOMATIONS_AUTOSEND: approve as system:automation; execute only when SENDING_ENABLED. */
+  /** mode:auto + AUTOMATIONS_AUTOSEND: approve as system:automation; execute only when SENDING_ENABLED and SEND_MODE allow it. */
   private async autoSend(flow: Flow, run: Run, step: number, d: string) {
     try {
       this.svc.approve(d, AUTOMATION_ACTOR);
-      if (!this.svc.config.sendingEnabled) return; // stays approved, like any human-approved draft
+      if (!sendingOn(this.svc.config)) return; // stays approved, like any human-approved draft
       const r = await this.svc.sendApproved(d, AUTOMATION_ACTOR);
       if (r.st === "failed") this.flows.event({ flow: flow.id, run: run.id, type: "failed", reason: String(r.err).slice(0, 200), step, media: run.media_id }, this.svc.now());
     } catch (e) {
@@ -311,7 +312,8 @@ export class Automations {
     if (!p) return this.skip(flow, run, step, "email_off");
     if (!run.vars.email) return this.skip(flow, run, step, "no_email");
     // Pushing to a list is an external write: same kill switch as platform sends.
-    if (!this.svc.config.sendingEnabled) return this.skip(flow, run, step, "sending_off");
+    if (!sendingOn(this.svc.config)) return this.skip(flow, run, step, "sending_off");
+    if (!recipientAllowed(this.svc.config, run.contact_id, this.dmThread(run)?.who)) return this.skip(flow, run, step, "not_tester");
     try {
       await p.push({
         email: run.vars.email,

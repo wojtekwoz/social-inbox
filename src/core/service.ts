@@ -1,7 +1,7 @@
 import { FlowApi } from "../automations/api.js";
 import type { EmailProviders } from "../automations/email.js";
 import { Automations } from "../automations/engine.js";
-import type { Config } from "../config.js";
+import { recipientAllowed, sendLabel, type Config } from "../config.js";
 import type { Logger } from "../log.js";
 import { clamp, columnar, estimateTokens, fitRows, LIMITS, lines, trunc, type Row } from "./compact.js";
 import type { DB } from "./db.js";
@@ -141,7 +141,7 @@ export class Service {
     if (Object.keys(synced).length) out.synced = synced;
     const auto = this.automations.overview();
     if (auto) out.auto = auto;
-    if (!this.config.sendingEnabled) out.send = "off";
+    out.send = sendLabel(this.config);
     return out;
   }
 
@@ -486,6 +486,7 @@ export class Service {
     if (r.status === "pending") throw new UserError(`draft ${d} is not approved; a human must approve it first (sinbox approve ${d})`, 409);
     if (r.status !== "approved") throw new UserError(`draft ${d} is ${r.status}`, 409);
     if (!this.config.sendingEnabled) throw new UserError("sending is disabled (SENDING_ENABLED=false); draft stays approved", 423);
+    if (this.config.sendMode === "off") throw new UserError("sending is disabled (SEND_MODE=off); draft stays approved", 423);
     const sentLastHour = (
       this.db.prepare("SELECT count(*) AS n FROM audit WHERE action = 'sent' AND ts > ?").get(this.now() - H) as { n: number }
     ).n;
@@ -496,6 +497,15 @@ export class Service {
     if (!thread) throw new UserError(`draft ${d} target no longer exists`, 410);
     const c = this.connectors.get(thread.net);
     if (!c) throw new UserError(`no connector for ${thread.net}`, 409);
+
+    // SEND_MODE=testers: only SEND_ALLOWLIST recipients. Final, so no retry.
+    const to = this.recipient(r, item, thread);
+    if (!recipientAllowed(this.config, to.id, to.who)) {
+      const err = `recipient ${to.who ? `@${to.who.replace(/^@/, "")}` : (to.id ?? "unknown")} is not on SEND_ALLOWLIST (SEND_MODE=${this.config.sendMode})`;
+      this.db.prepare("UPDATE drafts SET status = 'failed', error = ?, next_at = NULL WHERE id = ? AND status = 'approved'").run(err, d);
+      this.store.audit(actor, "send_blocked", d, { kind: r.kind, err }, this.now());
+      return { d, st: "failed", err, blocked: true };
+    }
 
     let humanAgent = false;
     if (r.kind === "dm") {
@@ -546,6 +556,13 @@ export class Service {
       this.store.audit(actor, "send_failed", d, { err: msg, attempts });
       return { d, st: "failed", err: msg };
     }
+  }
+
+  /** Who a draft reaches: the DM counterpart, or the author of the comment/mention being replied to or moderated. */
+  private recipient(r: DraftRow, item: ItemRow | undefined, thread: ThreadRow): { id: string | null; who: string | null } {
+    if (r.kind === "dm") return { id: thread.native_id.replace(/^dm:/, ""), who: thread.who };
+    const src = item ?? thread;
+    return { id: src.author_id, who: src.who };
   }
 
   private applyLocalEffects(r: DraftRow, item: ItemRow | undefined, thread: ThreadRow, nativeId: string | undefined, now: number) {

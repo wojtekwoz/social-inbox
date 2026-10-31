@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Tester-only send path
+
+### Changed (breaking default)
+- New `SEND_MODE` (`off` | `testers` | `all`, default **`off`**) gates every approved-draft execution on top of `SENDING_ENABLED`. **With `SEND_MODE` unset nothing is sent, even with `SENDING_ENABLED=true`.** Set `SEND_MODE=all` to keep the previous behaviour.
+
+### Added
+- `SEND_MODE=testers` + `SEND_ALLOWLIST` (comma-separated IGSIDs and/or usernames, case-insensitive, `@` optional): only allowlisted recipients (DM counterpart, or the author of the comment being replied to / private-replied to / moderated) are sent to. Other drafts are marked `failed` without retry and audited as `send_blocked`. Covers manual and automation drafts; `push_email` is skipped as `not_tester`.
+- `inbox_overview` always shows `send: "off" | "testers(N)" | "all"` (not in `/healthz`). The startup log includes `sendMode` and the tester count.
+
 ## Unreleased — M5 Automations engine
 
 Implements [docs/SPEC-automations.md](docs/SPEC-automations.md). Everything is off by default (`AUTOMATIONS_ENABLED=false`, `AUTOMATIONS_AUTOSEND=false`). `SENDING_ENABLED=false` and `APPROVAL=human` are unchanged.

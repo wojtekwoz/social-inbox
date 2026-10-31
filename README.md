@@ -4,7 +4,7 @@ Self-hosted, agent-first inbox for **Instagram** DMs, comments and mentions (You
 The main interface is an **MCP server** for AI assistants. A compact REST API and a small CLI (`sinbox`) sit on the same service layer.
 
 - **Token-light by design.** Responses are columnar, IDs are short (`i7k`, `t3f`, `d12`), lists are unread-only by default, `since` cursors return deltas, limits are capped, you can pick fields, and thread summaries are cached. Overview + a 20-item list is about 800 tokens.
-- **Nothing is sent without a human.** Replies, hides and deletes start as **drafts**. A human approves them with the CLI or REST using an `approve`-scoped key. Real sending is **off** until you set `SENDING_ENABLED=true`. Sends are idempotent, rate-limited (30/h) and audited in an append-only log.
+- **Nothing is sent without a human.** Replies, hides and deletes start as **drafts**. A human approves them with the CLI or REST using an `approve`-scoped key. Real sending is **off** until you set `SENDING_ENABLED=true` **and** `SEND_MODE=testers` (only `SEND_ALLOWLIST` recipients) or `SEND_MODE=all`. Sends are idempotent, rate-limited (30/h) and audited in an append-only log.
 - **Small.** One Node 22 container with SQLite (WAL + FTS5). There is no Redis and no Postgres. It uses about 100 MB RSS.
 
 See [SPEC.md](SPEC.md) for the full design and [CHANGELOG.md](CHANGELOG.md) for what is implemented.
@@ -13,7 +13,7 @@ See [SPEC.md](SPEC.md) for the full design and [CHANGELOG.md](CHANGELOG.md) for 
 
 ```bash
 npm ci && npm run build
-FAKE_CONNECTOR=true SENDING_ENABLED=true \
+FAKE_CONNECTOR=true SENDING_ENABLED=true SEND_MODE=all \
 SINBOX_AGENT_KEY=sk_agent_dev SINBOX_ADMIN_KEY=sk_admin_dev \
 DB_PATH=./data/dev.db npm start
 
@@ -177,6 +177,8 @@ See [.env.example](.env.example). The main settings:
 | Var | Default | |
 |---|---|---|
 | `SENDING_ENABLED` | `false` | Kill switch for all platform writes |
+| `SEND_MODE` | `off` | `off` \| `testers` \| `all`. Second gate, see below. **Unset = `off`: nothing is sent even with `SENDING_ENABLED=true`** |
+| `SEND_ALLOWLIST` | — | Comma-separated IGSIDs and/or `@usernames` (case-insensitive, `@` optional) for `SEND_MODE=testers` |
 | `APPROVAL` | `human` | `agent-confirmed` exposes MCP `approve` (needs `confirmedBy` + `ref`) |
 | `MAX_SENDS_PER_HOUR` | `30` | |
 | `SINBOX_AGENT_KEY` / `SINBOX_ADMIN_KEY` | — | Bootstrap keys (stored as SHA-256). More keys: `sinbox admin key-create` |
@@ -185,6 +187,16 @@ See [.env.example](.env.example). The main settings:
 | `RETENTION_RAW_DAYS` / `RETENTION_TEXT_DAYS` | `30` / `365` | Daily purge job |
 | `AUTOMATIONS_ENABLED` / `AUTOMATIONS_AUTOSEND` | `false` / `false` | Rules engine kill switch / self-approval for `mode: "auto"` flows |
 | `PLUNK_API_KEY`, `PLUNK_API_URL`, `MAILERLITE_API_KEY`, `MAILERLITE_GROUP_ID` | — | `push_email` providers; off while the key is empty |
+
+### Tester-only sending (`SEND_MODE`)
+
+Every approved draft, manual or from an automation, goes through one send path. It runs only when `SENDING_ENABLED=true` and `SEND_MODE` is not `off`:
+
+- `off` (default): approved drafts stay approved, nothing reaches Instagram. **If you upgrade with `SENDING_ENABLED=true` and no `SEND_MODE`, sending stops until you set `SEND_MODE=all`.**
+- `testers`: a draft is sent only if its recipient is on `SEND_ALLOWLIST`. The recipient is the DM counterpart, or the author of the comment/mention being replied to, private-replied to, hidden, unhidden or deleted. Others are refused with e.g. `recipient @x is not on SEND_ALLOWLIST (SEND_MODE=testers)`: the draft becomes `failed` (no retry) and a `send_blocked` audit entry is written. `push_email` steps are skipped (`not_tester`) for non-testers too. Meant for Meta App Review screencasts.
+- `all`: everyone (the old behaviour).
+
+`inbox_overview` (and `GET /api/overview`) shows `send: "off" | "testers(2)" | "all"`. `/healthz` does not.
 
 ## Deploy (Coolify)
 

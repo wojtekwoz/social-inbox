@@ -24,6 +24,8 @@ export function testConfig(env: Record<string, string> = {}): Config {
   return loadConfig({
     DB_PATH: ":memory:",
     SENDING_ENABLED: "true",
+    // Existing tests send on purpose; tester-mode tests override this.
+    SEND_MODE: "all",
     TOKEN_ENC_KEY: ENC_KEY,
     META_APP_ID: "1234567890",
     META_APP_SECRET: APP_SECRET,

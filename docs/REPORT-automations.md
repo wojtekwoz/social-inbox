@@ -82,3 +82,29 @@ Also deferred during the build (added to SPEC §9): live verification of the IG 
 6. **Waiting for an email consumes the next DM.** Per the spec, a non-email reply (e.g. a question) gets one retry prompt. The item stays unread in the inbox, but the retry still goes into the queue. Would you rather leave non-email replies alone?
 7. **Plunk endpoint.** The adapter uses `POST /v1/track` (event `instagram-lead`, or the step's `event`) so Plunk automations can fire. `PLUNK_API_URL` points at your self-hosted Plunk. Please check it against your Plunk version. MailerLite ignores `tags` (groups only).
 8. **Contact id for comments.** Runs link a comment's `from.id` to the IGSID in the later postback/DM. This holds for the Instagram API, but please confirm it once live with a tester account.
+
+## Tester-only send path
+
+For the Meta App Review screencast: let real sends reach only tester accounts.
+
+**What changed**
+
+- `SEND_MODE` = `off` | `testers` | `all`, default **`off`**. `SEND_ALLOWLIST` = comma-separated IGSIDs and/or usernames (case-insensitive, `@` optional), default empty. Both parsed in `src/config.ts`, which also has the shared helpers `sendingOn`, `recipientAllowed` and `sendLabel`. An invalid `SEND_MODE` fails at startup, like `APPROVAL`.
+- The gate sits in `Service.sendApproved`, the only path that calls `connector.send`. Manual drafts, `approve --send`, outbox retries and automation auto-sends all go through it.
+  - `SENDING_ENABLED=false` or `SEND_MODE=off` → `423`, and the draft stays `approved` (same as the existing kill switch).
+  - `SEND_MODE=testers`: the recipient is the DM counterpart (`dm:<igsid>` plus thread username), or for replies, private replies and hide/unhide/delete the author (`author_id` / `who`) of the target item, falling back to the thread. If neither the id nor the username is on the list, the draft becomes `failed` with `error = "recipient @x is not on SEND_ALLOWLIST (SEND_MODE=testers)"` and `next_at = NULL`, so it is never retried. A `send_blocked` audit row is written and the call returns `{st:"failed", err, blocked:true}`. For automation drafts this shows up as a `failed` flow event.
+  - `SEND_MODE=all`: the old behaviour.
+- Automations: `autoSend` and the flow-test `would` field use `sendingOn`, so `SEND_MODE=off` leaves auto-approved drafts approved instead of logging a failure. `push_email` is skipped as `sending_off` when off, and as `not_tester` in `testers` mode when the contact's IGSID or DM username isn't allowlisted.
+- `inbox_overview` / `GET /api/overview` (authenticated) now always include `send: "off" | "testers(N)" | "all"`. Before, `send` only appeared when it was `"off"`. `/healthz` is unchanged. The startup log adds `sendMode` and `testers`.
+- `.env.example`, `coolify.compose.yaml` (`SEND_MODE=${SEND_MODE:-off}`), README (config table plus a "Tester-only sending" section) and CHANGELOG document the new default.
+- Tests: new `test/sendmode.test.ts` covers config parsing, off by default with `SENDING_ENABLED=true`, non-allowlisted DM/reply/hide blocked without retry and audited, allowlisted testers passing by IGSID and by @username, `all` (still needs `SENDING_ENABLED`), and automation drafts going through the same gate. `test/helpers.ts` defaults to `SEND_MODE=all` because the existing suites send on purpose, and `scripts/smoke.mjs` sets it too. Also fixed the `TS7053` in `test/meta.test.ts:178`.
+
+**Backwards compatibility (breaking default).** With `SEND_MODE` unset, nothing is sent, even with `SENDING_ENABLED=true`. A deployment that currently sends must add `SEND_MODE=all` (or `testers` + `SEND_ALLOWLIST`) when upgrading.
+
+**Verification status.** In this session, shell commands (`npm run typecheck`, `npm test`, `npm run build`, and every `git` command) needed approval that wasn't given, so none of them ran and nothing is committed. Run them before committing.
+
+**Decisions for wozu**
+
+9. **Own items count as sends to us.** Unhiding or deleting one of our own comments in `testers` mode targets our own account, so add our username to `SEND_ALLOWLIST` if the screencast needs that.
+10. **Entries aren't typed.** An allowlist entry matches either an IGSID or a username, with no `id:` / `@` distinction. Collisions between numeric IGSIDs and usernames seem impossible in practice.
+11. **Blocked = `failed`.** I reused the `failed` status instead of adding a new `blocked` status, which would have needed a migration. `drafts` shows the reason in `err`, and the audit action is `send_blocked`.

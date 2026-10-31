@@ -39,6 +39,8 @@ const server = serve({ fetch: app.fetch, port: config.port }, (i) =>
       port: i.port,
       v: VERSION,
       sending: config.sendingEnabled,
+      sendMode: config.sendMode,
+      testers: config.sendAllowlist.length,
       approval: config.approval,
       webhooks: config.meta.webhooksEnabled,
       automations: config.automations.enabled,

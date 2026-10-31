@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sendingOn } from "../config.js";
 import { columnar, type Row } from "../core/compact.js";
 import { UserError } from "../core/errors.js";
 import type { In } from "../core/schemas.js";
@@ -137,7 +138,7 @@ export class FlowApi {
     if (kind !== "comment" && kind !== "postback" && optOutKeyword(p.text)) out.optout = 1;
     if (m) {
       out.steps = f.steps.map((s) => s.type);
-      out.would = f.mode === "auto" && cfg.automations.autosend ? (cfg.sendingEnabled ? "send" : "approve") : "draft";
+      out.would = f.mode === "auto" && cfg.automations.autosend ? (sendingOn(cfg) ? "send" : "approve") : "draft";
     }
     const off = [!cfg.automations.enabled && "engine off", !f.enabled && "flow off"].filter(Boolean);
     if (off.length) out.off = off.join(", ");
