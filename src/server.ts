@@ -8,7 +8,17 @@ import { bearer, Keys, type Principal } from "./core/auth.js";
 import { UserError } from "./core/errors.js";
 import type { Service } from "./core/service.js";
 import { createMcpServer } from "./mcp/tools.js";
-import { confirmationCode, deletionStatusHtml, esc, parseSignedRequest, privacyHtml } from "./web/privacy.js";
+import {
+  confirmationCode,
+  deletionInstructionsHtml,
+  deletionStatusHtml,
+  esc,
+  homeHtml,
+  parseSignedRequest,
+  privacyHtml,
+  termsHtml,
+  type Operator,
+} from "./web/privacy.js";
 
 export const VERSION = "0.1.0";
 
@@ -50,7 +60,13 @@ export function createApp(svc: Service, opts: { rateLimitPerMin?: number } = {})
 
   // ---- public ---------------------------------------------------------------
   app.get("/healthz", (c) => c.json({ ok: true, v: VERSION }));
-  app.get("/privacy", (c) => c.html(privacyHtml(cfg.publicUrl, process.env.PRIVACY_CONTACT ?? "See the account owner's profile.")));
+  const operator: Operator = {
+    contact: process.env.PRIVACY_CONTACT || "See the account owner's profile.",
+    name: process.env.PRIVACY_OPERATOR || undefined,
+  };
+  app.get("/", (c) => c.html(homeHtml(operator)));
+  app.get("/privacy", (c) => c.html(privacyHtml(cfg.publicUrl, operator)));
+  app.get("/terms", (c) => c.html(termsHtml(operator)));
 
   app.post("/data-deletion", async (c) => {
     if (!cfg.meta.appSecret) return c.json({ err: "not configured" }, 503);
@@ -65,6 +81,8 @@ export function createApp(svc: Service, opts: { rateLimitPerMin?: number } = {})
   });
   app.get("/data-deletion", (c) => {
     const code = c.req.query("code") ?? "";
+    // No code: the public "data deletion instructions" page (App Settings > Data deletion instructions URL).
+    if (!code) return c.html(deletionInstructionsHtml(operator));
     const row = svc.db.prepare("SELECT n, ts FROM deletions WHERE code = ?").get(code) as { n: number; ts: number } | undefined;
     return c.html(deletionStatusHtml(code, row), row ? 200 : 404);
   });
