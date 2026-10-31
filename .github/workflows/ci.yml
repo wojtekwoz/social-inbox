@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Smoke test (built server, CLI, stdio MCP bridge, RSS < 150 MB)
+        run: node scripts/smoke.mjs
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (no push)
+        run: docker build -t social-inbox:ci .
+      - name: Container starts and is healthy
+        run: |
+          docker run -d --name si -p 8787:8787 -e SINBOX_AGENT_KEY=ci -e FAKE_CONNECTOR=true social-inbox:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8787/healthz && break; sleep 1; done
+          curl -fs http://127.0.0.1:8787/healthz
+          sleep 5
+          for i in $(seq 1 100); do curl -fs -H 'authorization: Bearer ci' 'http://127.0.0.1:8787/api/items?limit=50' >/dev/null; done
+          sleep 2
+          mem=$(docker stats --no-stream --format '{{.MemUsage}}' si | awk '{print $1}')
+          echo "container memory: $mem"
+          docker rm -f si
+          # M0 acceptance: container idles < 150 MB
+          node -e "const m='$mem';const v=parseFloat(m);const mb=m.endsWith('GiB')?v*1024:m.endsWith('KiB')?v/1024:v;if(mb>=150){console.error('too much memory: '+m);process.exit(1)}"
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

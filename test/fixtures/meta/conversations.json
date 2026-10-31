@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": "aWdfZAG06MTpJR01lc3NhZA2VUaHJlYWQ6AAAA1",
+      "updated_time": "2026-10-31T11:40:00+0000",
+      "participants": {
+        "data": [
+          { "username": "wozu_co", "id": "17841400000000001" },
+          { "username": "ania_k", "id": "6000000000000001" }
+        ]
+      }
+    },
+    {
+      "id": "aWdfZAG06MTpJR01lc3NhZA2VUaHJlYWQ6AAAA2",
+      "updated_time": "2026-10-29T09:00:00+0000",
+      "participants": {
+        "data": [
+          { "username": "wozu_co", "id": "17841400000000001" },
+          { "username": "marek.p", "id": "6000000000000002" }
+        ]
+      }
+    },
+    {
+      "id": "aWdfZAG06MTpJR01lc3NhZA2VUaHJlYWQ6AAAA3",
+      "updated_time": "2026-08-01T09:00:00+0000",
+      "participants": {
+        "data": [
+          { "username": "wozu_co", "id": "17841400000000001" },
+          { "username": "old_friend", "id": "6000000000000009" }
+        ]
+      }
+    }
+  ],
+  "paging": { "cursors": { "after": "QVFIUz" } }
+}

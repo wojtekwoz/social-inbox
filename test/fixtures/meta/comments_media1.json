@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "id": "17900000000000001",
+      "text": "Super odcinek, a jak zrobiłeś ten efekt przejścia na końcu?",
+      "timestamp": "2026-10-30T12:00:00+0000",
+      "username": "kasia_codes",
+      "from": { "id": "6000000000000003", "username": "kasia_codes" },
+      "hidden": false,
+      "replies": {
+        "data": [
+          {
+            "id": "17900000000000002",
+            "text": "Dzięki! Opiszę to w stories",
+            "timestamp": "2026-10-30T13:00:00+0000",
+            "username": "wozu_co",
+            "from": { "id": "17841400000000001", "username": "wozu_co" },
+            "hidden": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "17900000000000003",
+      "text": "Check my profile for crypto giveaway winner promo code",
+      "timestamp": "2026-10-31T08:00:00+0000",
+      "username": "spam_bot_99",
+      "from": { "id": "6000000000000004", "username": "spam_bot_99" },
+      "hidden": false
+    }
+  ],
+  "paging": { "cursors": { "before": "QVFI", "after": "QVFJ" } }
+}
