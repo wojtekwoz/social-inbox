@@ -27,6 +27,7 @@ services:
       - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN:-}
       - META_HUMAN_AGENT=${META_HUMAN_AGENT:-false}
       - PRIVACY_CONTACT=${PRIVACY_CONTACT:-}
+      - PRIVACY_OPERATOR=${PRIVACY_OPERATOR:-}
     volumes:
       - social-inbox-data:/data
     # RAM budget from SPEC §4.5 (expected ~80-120 MB idle).

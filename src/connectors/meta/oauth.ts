@@ -15,6 +15,8 @@ export const META_SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
   "pages_manage_metadata",
+  // Meta lists business_management as a dependency of instagram_manage_messages under Facebook Login for Business.
+  "business_management",
 ];
 
 const STATE_TTL_MS = 10 * 60_000;
