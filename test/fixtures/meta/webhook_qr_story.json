@@ -1,0 +1,36 @@
+{
+  "object": "instagram",
+  "entry": [
+    {
+      "time": 1793447970000,
+      "id": "17841400000000001",
+      "messaging": [
+        {
+          "sender": { "id": "6000000000000007" },
+          "recipient": { "id": "17841400000000001" },
+          "timestamp": 1793447961000,
+          "message": { "mid": "aWdfZAG1QR01", "text": "Claude", "quick_reply": { "payload": "Q_CLAUDE" } }
+        },
+        {
+          "sender": { "id": "6000000000000008" },
+          "recipient": { "id": "17841400000000001" },
+          "timestamp": 1793447962000,
+          "message": {
+            "mid": "aWdfZAG1SR01",
+            "text": "poproszę link",
+            "reply_to": { "story": { "id": "17950000000000001", "url": "https://lookaside.example.test/story1" } }
+          }
+        },
+        {
+          "sender": { "id": "6000000000000009" },
+          "recipient": { "id": "17841400000000001" },
+          "timestamp": 1793447963000,
+          "message": {
+            "mid": "aWdfZAG1SM01",
+            "attachments": [{ "type": "story_mention", "payload": { "url": "https://lookaside.example.test/story2" } }]
+          }
+        }
+      ]
+    }
+  ]
+}

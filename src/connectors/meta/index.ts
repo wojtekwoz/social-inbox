@@ -2,11 +2,29 @@ import type { Config } from "../../config.js";
 import type { DB } from "../../core/db.js";
 import { UserError } from "../../core/errors.js";
 import { D, H } from "../../core/time.js";
-import type { Connector, IncomingItem, SendRequest, SendResult } from "../../core/types.js";
+import type { Connector, DraftPayload, IncomingItem, SendRequest, SendResult } from "../../core/types.js";
 import { loadAccount, type IgAccount } from "./account.js";
 import { Graph, type Fetch } from "./graph.js";
 import { IgPoller, type KV } from "./poll.js";
 import { parseWebhook, type WebhookPayload } from "./webhook.js";
+
+/** Send API `message` object: plain text, a button template, or text with quick replies. */
+export function igMessage(text: string, payloadJson: string | null): Record<string, unknown> {
+  const p = payloadJson ? (JSON.parse(payloadJson) as DraftPayload) : {};
+  if (p.buttons?.length)
+    return {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "button",
+          text,
+          buttons: p.buttons.map((b) => (b.url ? { type: "web_url", url: b.url, title: b.title } : { type: "postback", title: b.title, payload: b.payload })),
+        },
+      },
+    };
+  if (p.quick_replies?.length) return { text, quick_replies: p.quick_replies.map((q) => ({ content_type: "text", title: q.title, payload: q.payload })) };
+  return { text };
+}
 
 export class MetaConnector implements Connector {
   net = "ig";
@@ -70,7 +88,7 @@ export class MetaConnector implements Connector {
     switch (draft.kind) {
       case "dm": {
         if (!req.recipientId) throw new UserError("missing DM recipient");
-        const body: Record<string, unknown> = { recipient: { id: req.recipientId }, message: { text: draft.text } };
+        const body: Record<string, unknown> = { recipient: { id: req.recipientId }, message: igMessage(draft.text ?? "", draft.payload) };
         if (req.humanAgent) Object.assign(body, { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
         else body.messaging_type = "RESPONSE";
         const r = await this.graph.post<{ message_id?: string; recipient_id?: string }>(`${a.pageId}/messages`, {}, tok, body);
@@ -82,7 +100,7 @@ export class MetaConnector implements Connector {
           `${a.pageId}/messages`,
           {},
           tok,
-          { recipient: { comment_id: item.native_id }, message: { text: draft.text } },
+          { recipient: { comment_id: item.native_id }, message: igMessage(draft.text ?? "", draft.payload) },
         );
         return { nativeId: r.message_id, raw: r };
       }

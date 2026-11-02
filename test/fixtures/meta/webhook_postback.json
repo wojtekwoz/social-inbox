@@ -1,0 +1,17 @@
+{
+  "object": "instagram",
+  "entry": [
+    {
+      "time": 1793447960000,
+      "id": "17841400000000001",
+      "messaging": [
+        {
+          "sender": { "id": "6000000000000006" },
+          "recipient": { "id": "17841400000000001" },
+          "timestamp": 1793447955000,
+          "postback": { "mid": "aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE3ODQxNDAwMDAwMDAwMDAxOjPB01", "title": "Wyślij", "payload": "GUIDE" }
+        }
+      ]
+    }
+  ]
+}

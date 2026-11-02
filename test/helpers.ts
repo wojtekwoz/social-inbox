@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { EmailProviders } from "../src/automations/email.js";
 import { loadConfig, type Config } from "../src/config.js";
 import { FakeConnector } from "../src/connectors/fake/index.js";
 import { saveAccount } from "../src/connectors/meta/account.js";
@@ -23,6 +24,8 @@ export function testConfig(env: Record<string, string> = {}): Config {
   return loadConfig({
     DB_PATH: ":memory:",
     SENDING_ENABLED: "true",
+    // Existing tests send on purpose; tester-mode tests override this.
+    SEND_MODE: "all",
     TOKEN_ENC_KEY: ENC_KEY,
     META_APP_ID: "1234567890",
     META_APP_SECRET: APP_SECRET,
@@ -44,12 +47,12 @@ export function clock(t = NOW): Clock {
 }
 
 /** Service with the fake connector only. */
-export function fakeSetup(env: Record<string, string> = {}) {
+export function fakeSetup(env: Record<string, string> = {}, opts: { email?: EmailProviders } = {}) {
   const c = clock();
   const db = openDb(":memory:");
   const config = testConfig(env);
   const fake = new FakeConnector(c.now);
-  const svc = new Service({ db, config, log: createLogger("silent"), connectors: [fake], now: c.now });
+  const svc = new Service({ db, config, log: createLogger("silent"), connectors: [fake], now: c.now, email: opts.email });
   const keys = new Keys(db);
   keys.ensure("agent", AGENT_KEY, AGENT_SCOPES);
   keys.ensure("admin", ADMIN_KEY, SCOPES);
@@ -110,14 +113,14 @@ export const igRoutes = (): [string, RegExp, Handler][] => [
 ];
 
 /** Service with the Meta connector wired to the Graph mock and a connected account. */
-export function metaSetup(env: Record<string, string> = {}, routes = igRoutes()) {
+export function metaSetup(env: Record<string, string> = {}, routes = igRoutes(), opts: { email?: EmailProviders } = {}) {
   const c = clock();
   const db = openDb(":memory:");
   const config = testConfig(env);
   const g = graphMock(routes);
   const meta = new MetaConnector(db, config, { fetch: g.fetch, now: c.now });
   saveAccount(db, ENC_KEY, IG);
-  const svc = new Service({ db, config, log: createLogger("silent"), connectors: [meta], now: c.now });
+  const svc = new Service({ db, config, log: createLogger("silent"), connectors: [meta], now: c.now, email: opts.email });
   const keys = new Keys(db);
   keys.ensure("agent", AGENT_KEY, AGENT_SCOPES);
   keys.ensure("admin", ADMIN_KEY, SCOPES);

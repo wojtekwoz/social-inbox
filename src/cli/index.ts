@@ -141,6 +141,42 @@ program
   .command("sync")
   .argument("[src]")
   .action(async (src?: string) => out(await call("POST", "/api/sync", src ? { src } : {})));
+
+const flows = program.command("flows").description("automation flows (deterministic; messages are drafts unless mode auto + AUTOMATIONS_AUTOSEND)");
+flows.command("list").alias("ls").action(async () => out(await call("GET", "/api/flows")));
+flows
+  .command("get")
+  .argument("<f>")
+  .action(async (f: string) => out(await call("GET", `/api/flows/${f}`)));
+flows
+  .command("set")
+  .description("create or update a flow from a JSON file (`-` = stdin); include \"id\" to update")
+  .argument("<file>")
+  .action(async (file: string) => {
+    const doc = JSON.parse(file === "-" ? readFileSync(0, "utf8") : readFileSync(file, "utf8")) as { id?: string };
+    out(doc.id ? await call("PUT", `/api/flows/${doc.id}`, doc) : await call("POST", "/api/flows", doc));
+  });
+flows
+  .command("on")
+  .argument("<f>")
+  .action(async (f: string) => out(await call("POST", `/api/flows/${f}/on`)));
+flows
+  .command("off")
+  .argument("<f>")
+  .action(async (f: string) => out(await call("POST", `/api/flows/${f}/off`)));
+flows
+  .command("metrics")
+  .argument("[f]")
+  .option("--days <n>", "default 7, max 90")
+  .action(async (f: string | undefined, o: { days?: string }) => out(await call("GET", "/api/flows/metrics" + qs({ id: f, days: o.days }))));
+flows
+  .command("test")
+  .description("dry-run the matcher (no side effects)")
+  .argument("<f>")
+  .argument("<text>")
+  .option("--media <id>", "post short id or native media id")
+  .action(async (f: string, text: string, o: { media?: string }) => out(await call("POST", `/api/flows/${f}/test`, { text, media: o.media })));
+
 program
   .command("connect")
   .argument("<net>", "meta")

@@ -4,7 +4,7 @@ Self-hosted, agent-first inbox for **Instagram** DMs, comments and mentions (You
 The main interface is an **MCP server** for AI assistants. A compact REST API and a small CLI (`sinbox`) sit on the same service layer.
 
 - **Token-light by design.** Responses are columnar, IDs are short (`i7k`, `t3f`, `d12`), lists are unread-only by default, `since` cursors return deltas, limits are capped, you can pick fields, and thread summaries are cached. Overview + a 20-item list is about 800 tokens.
-- **Nothing is sent without a human.** Replies, hides and deletes start as **drafts**. A human approves them with the CLI or REST using an `approve`-scoped key. Real sending is **off** until you set `SENDING_ENABLED=true`. Sends are idempotent, rate-limited (30/h) and audited in an append-only log.
+- **Nothing is sent without a human.** Replies, hides and deletes start as **drafts**. A human approves them with the CLI or REST using an `approve`-scoped key. Real sending is **off** until you set `SENDING_ENABLED=true` **and** `SEND_MODE=testers` (only `SEND_ALLOWLIST` recipients) or `SEND_MODE=all`. Sends are idempotent, rate-limited (30/h) and audited in an append-only log.
 - **Small.** One Node 22 container with SQLite (WAL + FTS5). There is no Redis and no Postgres. It uses about 100 MB RSS.
 
 See [SPEC.md](SPEC.md) for the full design and [CHANGELOG.md](CHANGELOG.md) for what is implemented.
@@ -13,7 +13,7 @@ See [SPEC.md](SPEC.md) for the full design and [CHANGELOG.md](CHANGELOG.md) for 
 
 ```bash
 npm ci && npm run build
-FAKE_CONNECTOR=true SENDING_ENABLED=true \
+FAKE_CONNECTOR=true SENDING_ENABLED=true SEND_MODE=all \
 SINBOX_AGENT_KEY=sk_agent_dev SINBOX_ADMIN_KEY=sk_admin_dev \
 DB_PATH=./data/dev.db npm start
 
@@ -146,6 +146,30 @@ The app is the existing Meta app with **Instagram API via Facebook Login for Bus
 
 **Reply rules enforced at draft time, again at approval, and again at send:** DMs can only be sent within 24 h of the user's last message. With `META_HUMAN_AGENT=true` (a separate Meta feature) that becomes 7 days. Messages are limited to 1000 chars. Private replies are limited to one per comment, within 7 days. Comment replies are limited to 2200 chars and always go to the top-level comment.
 
+## Automations
+
+A small, **deterministic** rules engine for Instagram growth flows: keyword comment → private reply with a button → tap → DM / email capture → push to Plunk or MailerLite. There are no LLM calls. Anything a rule doesn't match stays in the inbox untouched for agents and humans. Design: [docs/SPEC-automations.md](docs/SPEC-automations.md).
+
+- **Off by default.** `AUTOMATIONS_ENABLED=false`. New flows are created switched off.
+- **Still drafts.** Every message a flow wants to send becomes a normal draft in the approval queue (`drafts` shows `auto: r…`). A `mode: "auto"` flow approves its own drafts as `system:automation` **only** with `AUTOMATIONS_AUTOSEND=true`, and they are executed **only** with `SENDING_ENABLED=true`. Only `approve`-scoped keys can create, edit or switch on `auto` flows.
+- **Meta rules in code:** follow-gating is rejected at validation, one private reply per comment within 7 days, DMs only inside the 24 h window (never `HUMAN_AGENT`), opt-out on `stop` / `stopp` / `nie pisz` / `unsubscribe` (whole message), a per-contact cooldown (`AUTOMATIONS_COOLDOWN_HOURS`, default 24) and `MAX_SENDS_PER_HOUR`.
+- **Triggers:** `comment_keyword` (optionally per post), `dm_keyword`, `story_reply`, `story_mention`, `postback` / `ice_breaker` (buttons, quick replies, ice breakers). Matching ignores case, diacritics and punctuation (`exact` | `word` (default) | `contains`). Each inbound item is evaluated once, even when it arrives via both webhook and poll.
+- **Steps:** `private_reply` (≤1 button), `public_reply` (1–5 variants, round-robin), `send_dm` (≤3 buttons or ≤13 quick replies), `ask_email`, `push_email`, `tag`, `soft_follow_ask` (never blocks), `handoff`.
+
+```json
+{"name":"Claude guide","enabled":true,
+ "trigger":{"type":"comment_keyword","keywords":["claude"],"media_ids":["p3"]},
+ "steps":[
+  {"type":"private_reply","text":"Hej! Kliknij, a wyślę Ci przewodnik.","button":{"title":"Wyślij","payload":"GUIDE"}},
+  {"type":"public_reply","variants":["Sprawdź DM 📩","Wysłane!"]},
+  {"type":"ask_email","text":"Na jaki email wysłać przewodnik?"},
+  {"type":"push_email","provider":"plunk","tags":["claude"]}]}
+```
+
+MCP tools: `flow_list`, `flow_get`, `flow_upsert`, `flow_toggle`, `flow_metrics`, `flow_test` (dry run, no side effects). `inbox_overview` gains `auto: {triggered, sent, pending}` (24 h).
+REST: `GET /api/flows` · `GET /api/flows/:f` · `POST /api/flows` · `PUT /api/flows/:f` · `POST /api/flows/:f/on|off` · `POST /api/flows/:f/test {text, media?}` · `GET /api/flows/metrics?id=&days=`.
+CLI: `sinbox flows list | get f1 | set flow.json | on f1 | off f1 | metrics [f1] [--days 30] | test f1 "Claude!"`.
+
 ## Configuration
 
 See [.env.example](.env.example). The main settings:
@@ -153,12 +177,26 @@ See [.env.example](.env.example). The main settings:
 | Var | Default | |
 |---|---|---|
 | `SENDING_ENABLED` | `false` | Kill switch for all platform writes |
+| `SEND_MODE` | `off` | `off` \| `testers` \| `all`. Second gate, see below. **Unset = `off`: nothing is sent even with `SENDING_ENABLED=true`** |
+| `SEND_ALLOWLIST` | — | Comma-separated IGSIDs and/or `@usernames` (case-insensitive, `@` optional) for `SEND_MODE=testers` |
 | `APPROVAL` | `human` | `agent-confirmed` exposes MCP `approve` (needs `confirmedBy` + `ref`) |
 | `MAX_SENDS_PER_HOUR` | `30` | |
 | `SINBOX_AGENT_KEY` / `SINBOX_ADMIN_KEY` | — | Bootstrap keys (stored as SHA-256). More keys: `sinbox admin key-create` |
 | `TOKEN_ENC_KEY` | — | 32 bytes hex/base64; required to connect accounts |
 | `META_*` | — | See above |
 | `RETENTION_RAW_DAYS` / `RETENTION_TEXT_DAYS` | `30` / `365` | Daily purge job |
+| `AUTOMATIONS_ENABLED` / `AUTOMATIONS_AUTOSEND` | `false` / `false` | Rules engine kill switch / self-approval for `mode: "auto"` flows |
+| `PLUNK_API_KEY`, `PLUNK_API_URL`, `MAILERLITE_API_KEY`, `MAILERLITE_GROUP_ID` | — | `push_email` providers; off while the key is empty |
+
+### Tester-only sending (`SEND_MODE`)
+
+Every approved draft, manual or from an automation, goes through one send path. It runs only when `SENDING_ENABLED=true` and `SEND_MODE` is not `off`:
+
+- `off` (default): approved drafts stay approved, nothing reaches Instagram. **If you upgrade with `SENDING_ENABLED=true` and no `SEND_MODE`, sending stops until you set `SEND_MODE=all`.**
+- `testers`: a draft is sent only if its recipient is on `SEND_ALLOWLIST`. The recipient is the DM counterpart, or the author of the comment/mention being replied to, private-replied to, hidden, unhidden or deleted. Others are refused with e.g. `recipient @x is not on SEND_ALLOWLIST (SEND_MODE=testers)`: the draft becomes `failed` (no retry) and a `send_blocked` audit entry is written. `push_email` steps are skipped (`not_tester`) for non-testers too. Meant for Meta App Review screencasts.
+- `all`: everyone (the old behaviour).
+
+`inbox_overview` (and `GET /api/overview`) shows `send: "off" | "testers(2)" | "all"`. `/healthz` does not.
 
 ## Deploy (Coolify)
 
