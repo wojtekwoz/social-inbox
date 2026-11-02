@@ -254,7 +254,7 @@ describe("Meta OAuth + privacy endpoints", () => {
     const u = new URL(url);
     expect(u.searchParams.get("redirect_uri")).toBe("https://inbox.example.test/oauth/meta/callback");
     expect(u.searchParams.get("scope")).toBe(
-      "instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_show_list,pages_read_engagement,pages_manage_metadata",
+      "instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management",
     );
     const state = u.searchParams.get("state")!;
 
@@ -288,5 +288,20 @@ describe("Meta OAuth + privacy endpoints", () => {
     expect(svc.store.exportPerson("ig", "6000000000000001")).toHaveLength(0);
     const status = await app.request(`/data-deletion?code=${body.confirmation_code}`);
     expect(await status.text()).toContain("Deletion complete");
+  });
+
+  it("serves the public pages Meta App Review links to", async () => {
+    const { app } = metaSetup();
+    for (const path of ["/", "/privacy", "/terms", "/data-deletion"]) {
+      const res = await app.request(path);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("content-type"), path).toContain("text/html");
+    }
+    const instructions = await (await app.request("/data-deletion")).text();
+    expect(instructions).toContain("Delete my data");
+    const privacy = await (await app.request("/privacy")).text();
+    expect(privacy).toContain("Email addresses");
+    expect(privacy).toContain("https://inbox.example.test/data-deletion");
+    expect((await app.request("/data-deletion?code=nope")).status).toBe(404);
   });
 });
